@@ -1,0 +1,19 @@
+# Ignorar executáveis gerados
+*.exe
+*.dll
+
+# Ignorar arquivos ZIP do fmsx
+fmsx*.zip
+
+# Ignorar componentes do SQLite
+sqlite3*
+#*.db
+
+# Ignorar arquivos temporários do PureBasic
+*.pbi
+*.pb~
+
+# Ignorar outros arquivos temporários comuns
+*.bak
+*.tmp
+*.log
