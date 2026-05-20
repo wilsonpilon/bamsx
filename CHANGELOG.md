@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.7 (build 0x6A0D14CB)
+- Sincronizacao geral da versao para 0.1.7
+- Atualizacao do build atual no formato Unix UTC hexadecimal
+- README e OUTLINE revisados com o historico/processo mais recente
+- Implementado download do banco de dados de ROMs GameDB via romdb.vampier.net
+
 ## v0.1.5 (build 0x6A0D0A96)
 - Setup mais largo e compacto
 - About com cópia por card

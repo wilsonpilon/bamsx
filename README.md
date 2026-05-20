@@ -1,7 +1,7 @@
 # bamsx: Frontend Toy para fMSX
 
-**Versão:** 0.1.5  
-**Build:** 0x6A0D0A96 (Unix UTC seconds in hexadecimal)
+**Versão:** 0.1.7  
+**Build:** 0x6A0D14CB (Unix UTC seconds in hexadecimal)
 
 **Autor:** Wilson 'Barney' Pilon  
 **(c)1972 Cybernostra, Inc.**  
@@ -22,7 +22,12 @@ Este projeto é um frontend para o emulador fMSX, desenvolvido em PureBasic como
 - Montagem automática da linha de comando
 - Interface com temas e janelas auxiliares de ajuda
 
-## Novidades Recentes (v0.1.5)
+## Novidades Recentes (v0.1.7)
+- Sincronização geral da versão do projeto para 0.1.7
+- Atualização do build atual no padrão Unix UTC em hexadecimal
+- README e OUTLINE revisados com o processo mais recente de release/documentação
+
+## Destaques da v0.1.5
 - Setup redesenhado para layout mais largo e compacto, com mais opções lado a lado
 - About com cards clicáveis para copiar valores individuais (ex.: Build)
 - Help > CLI implementado em cards, com busca, filtros por categoria e cópia para clipboard
@@ -55,6 +60,11 @@ Este projeto é um frontend para o emulador fMSX, desenvolvido em PureBasic como
 ---
 
 ## Changelog
+
+### v0.1.7 (build 0x6A0D14CB)
+- Versão geral atualizada para 0.1.7
+- Build sincronizado no formato Unix UTC hexadecimal
+- README e OUTLINE atualizados com o processo mais recente
 
 ### v0.1.5 (build 0x6A0D0A96)
 - Setup mais largo e compacto

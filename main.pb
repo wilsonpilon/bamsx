@@ -25,6 +25,7 @@ UseSQLiteDatabase()
 Enumeration
 #Window_Main
 #Window_Setup
+#Window_GameDBStatus
 #Window_CLI
 #Window_Keys
 #Window_About
@@ -33,6 +34,7 @@ EndEnumeration
 ; Identificadores numericos usados pelo menu principal.
 Enumeration
 #Menu_File_Exit = 100
+#Menu_File_UpdateGameDB
 #Menu_Tools_Setup
 #Menu_Help_CLI
 #Menu_Help_Keys
@@ -144,6 +146,17 @@ Enumeration
 #Gadget_About_Scroll
 #Gadget_About_Canvas
 #Gadget_About_Close
+#Gadget_GameDBStatus_Title = 380
+#Gadget_GameDBStatus_Message
+#Gadget_GameDBStatus_SQLLabel
+#Gadget_GameDBStatus_SQLProgress
+#Gadget_GameDBStatus_SQLPercent
+#Gadget_GameDBStatus_SQLSize
+#Gadget_GameDBStatus_JSONLabel
+#Gadget_GameDBStatus_JSONProgress
+#Gadget_GameDBStatus_JSONPercent
+#Gadget_GameDBStatus_JSONSize
+#Gadget_GameDBStatus_Cancel
 #StatusBar_Main = 400
     #Gadget_Setup_4x3 = 500
 EndEnumeration
@@ -199,8 +212,8 @@ Global gFMSXStateFile.s = ""
 Global gFMSXStateArg.s = ""
 
 #App_Name = "bamsx"
-#App_Version = "0.1.5"
-#App_Build = "0x6A0D0A96"
+#App_Version = "0.1.7"
+#App_Build = "0x6A0D14CB"
 #App_CreationYear = "2026"
 #App_Programmer = "Wilson 'Barney' Pilon"
 #App_Company = "Cybernostra, Inc."
@@ -253,6 +266,7 @@ Global gCLISearchText.s = ""
 Global gCLIHoverIndex.i = -1
 Global gCLISelectedIndex.i = -1
 Global gAboutHoverIndex.i = -1
+Global gGameDBStatusCancelled.i = #False
 Global gKeysVisibleCount.i
 Global gCLIVisibleCount.i
 Global Dim gKeysVisibleIndex.i(255)
@@ -265,6 +279,10 @@ Import "gdi32.lib"
 EndImport
 
 Declare ApplyThemeToCLIWindow()
+Declare EnsureDatabaseWithSQLiteExe()
+Declare InitDatabase()
+Declare LoadSettings()
+Declare UpdateStatusBar()
 
 Procedure.s ResolveSourceCodeProFontPath()
     Protected basePath.s
@@ -2352,6 +2370,595 @@ EndIf
 ProcedureReturn GetPathPart(ProgramFilename()) + "bamsx.db"
 EndProcedure
 
+Procedure.s ResolvePowerShellPath()
+Protected candidate.s
+
+candidate = GetEnvironmentVariable("SystemRoot") + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+If FileSize(candidate) <> -1
+ProcedureReturn candidate
+EndIf
+
+ProcedureReturn "powershell.exe"
+EndProcedure
+
+Procedure.s ResolveTarExePath()
+Protected candidate.s
+
+candidate = GetEnvironmentVariable("SystemRoot") + "\\System32\\tar.exe"
+If FileSize(candidate) <> -1
+ProcedureReturn candidate
+EndIf
+
+ProcedureReturn "tar.exe"
+EndProcedure
+
+Procedure.s EscapePowerShellSingleQuoted(text.s)
+ProcedureReturn ReplaceString(text, "'", "''")
+EndProcedure
+
+Procedure.i RunProgramChecked(programFile.s, params.s, workingDirectory.s, errorTitle.s, launchMessage.s, exitMessage.s)
+Protected program.i
+
+program = RunProgram(programFile, params, workingDirectory, #PB_Program_Wait)
+If program = 0
+MessageRequester(errorTitle, launchMessage)
+ProcedureReturn #False
+EndIf
+
+If ProgramExitCode(program) <> 0
+CloseProgram(program)
+MessageRequester(errorTitle, exitMessage)
+ProcedureReturn #False
+EndIf
+
+CloseProgram(program)
+ProcedureReturn #True
+EndProcedure
+
+Procedure ReopenFrontendDatabase()
+    gDatabaseReady = InitDatabase()
+    If gDatabaseReady
+        LoadSettings()
+    EndIf
+    UpdateStatusBar()
+EndProcedure
+
+Procedure.s FormatByteCount(bytes.q)
+Protected value.d
+
+If bytes < 0
+    bytes = 0
+EndIf
+
+If bytes < 1024
+    ProcedureReturn Str(bytes) + " B"
+EndIf
+
+value = bytes / 1024.0
+If value < 1024.0
+    ProcedureReturn StrD(value, 1) + " KB"
+EndIf
+
+value / 1024.0
+If value < 1024.0
+    ProcedureReturn StrD(value, 1) + " MB"
+EndIf
+
+value / 1024.0
+    ProcedureReturn StrD(value, 2) + " GB"
+EndProcedure
+
+Procedure PumpGameDBStatusWindowEvents()
+Protected event.i
+
+Repeat
+    event = WindowEvent()
+    Select event
+        Case #PB_Event_Gadget
+            If EventWindow() = #Window_GameDBStatus And EventGadget() = #Gadget_GameDBStatus_Cancel
+                gGameDBStatusCancelled = #True
+                SetGadgetText(#Gadget_GameDBStatus_Message, "Cancelling update...")
+            EndIf
+
+        Case #PB_Event_CloseWindow
+            If EventWindow() = #Window_GameDBStatus
+                gGameDBStatusCancelled = #True
+                SetGadgetText(#Gadget_GameDBStatus_Message, "Cancelling update...")
+            EndIf
+    EndSelect
+Until event = 0
+EndProcedure
+
+Procedure ApplyThemeToGameDBStatusWindow()
+    EnsureUIFont()
+
+    If IsWindow(#Window_GameDBStatus)
+        SetWindowColor(#Window_GameDBStatus, gThemeWindowBack)
+    EndIf
+
+    ApplyTextTheme(#Gadget_GameDBStatus_Title, gThemeWindowBack, gThemeText)
+    ApplyTextTheme(#Gadget_GameDBStatus_Message, gThemeWindowBack, gThemeMutedText)
+    ApplyTextTheme(#Gadget_GameDBStatus_SQLLabel, gThemeWindowBack, gThemeText)
+    ApplyTextTheme(#Gadget_GameDBStatus_SQLPercent, gThemeWindowBack, gThemeAccent)
+    ApplyTextTheme(#Gadget_GameDBStatus_SQLSize, gThemeWindowBack, gThemeMutedText)
+    ApplyTextTheme(#Gadget_GameDBStatus_JSONLabel, gThemeWindowBack, gThemeText)
+    ApplyTextTheme(#Gadget_GameDBStatus_JSONPercent, gThemeWindowBack, gThemeAccent)
+    ApplyTextTheme(#Gadget_GameDBStatus_JSONSize, gThemeWindowBack, gThemeMutedText)
+    ApplyButtonTheme(#Gadget_GameDBStatus_Cancel)
+
+    ApplyFontToAllGadgets(FontID(gUIFontNormal))
+    If IsGadget(#Gadget_GameDBStatus_Title)
+        SetGadgetFont(#Gadget_GameDBStatus_Title, FontID(gUIFontTitle))
+    EndIf
+    If IsGadget(#Gadget_GameDBStatus_Message)
+        SetGadgetFont(#Gadget_GameDBStatus_Message, FontID(gUIFontCaption))
+    EndIf
+    If IsGadget(#Gadget_GameDBStatus_SQLLabel)
+        SetGadgetFont(#Gadget_GameDBStatus_SQLLabel, FontID(gUIFontCaption))
+    EndIf
+    If IsGadget(#Gadget_GameDBStatus_SQLPercent)
+        SetGadgetFont(#Gadget_GameDBStatus_SQLPercent, FontID(gUIFontCaption))
+    EndIf
+    If IsGadget(#Gadget_GameDBStatus_SQLSize)
+        SetGadgetFont(#Gadget_GameDBStatus_SQLSize, FontID(gUIFontCaption))
+    EndIf
+    If IsGadget(#Gadget_GameDBStatus_JSONLabel)
+        SetGadgetFont(#Gadget_GameDBStatus_JSONLabel, FontID(gUIFontCaption))
+    EndIf
+    If IsGadget(#Gadget_GameDBStatus_JSONPercent)
+        SetGadgetFont(#Gadget_GameDBStatus_JSONPercent, FontID(gUIFontCaption))
+    EndIf
+    If IsGadget(#Gadget_GameDBStatus_JSONSize)
+        SetGadgetFont(#Gadget_GameDBStatus_JSONSize, FontID(gUIFontCaption))
+    EndIf
+    If IsGadget(#Gadget_GameDBStatus_Cancel)
+        SetGadgetFont(#Gadget_GameDBStatus_Cancel, FontID(gUIFontNormal))
+    EndIf
+EndProcedure
+
+Procedure OpenGameDBStatusWindow()
+    If IsWindow(#Window_GameDBStatus)
+        SetActiveWindow(#Window_GameDBStatus)
+        ProcedureReturn
+    EndIf
+
+    gGameDBStatusCancelled = #False
+
+    If OpenWindow(#Window_GameDBStatus, 0, 0, 620, 294, "Update GameDB", #PB_Window_SystemMenu | #PB_Window_WindowCentered, WindowID(#Window_Main))
+        TextGadget(#Gadget_GameDBStatus_Title, 20, 18, 580, 34, "GameDB Update Status")
+        TextGadget(#Gadget_GameDBStatus_Message, 20, 58, 580, 22, "Preparing download...")
+
+        TextGadget(#Gadget_GameDBStatus_SQLLabel, 20, 98, 480, 20, "SQL archive: waiting")
+        TextGadget(#Gadget_GameDBStatus_SQLPercent, 520, 98, 80, 20, "0%")
+        ProgressBarGadget(#Gadget_GameDBStatus_SQLProgress, 20, 122, 580, 18, 0, 100)
+        TextGadget(#Gadget_GameDBStatus_SQLSize, 20, 146, 580, 18, "0 B / 0 B")
+
+        TextGadget(#Gadget_GameDBStatus_JSONLabel, 20, 176, 480, 20, "JSON archive: waiting")
+        TextGadget(#Gadget_GameDBStatus_JSONPercent, 520, 176, 80, 20, "0%")
+        ProgressBarGadget(#Gadget_GameDBStatus_JSONProgress, 20, 200, 580, 18, 0, 100)
+        TextGadget(#Gadget_GameDBStatus_JSONSize, 20, 224, 580, 18, "0 B / 0 B")
+
+        ButtonGadget(#Gadget_GameDBStatus_Cancel, 480, 252, 120, 28, "Cancel")
+
+        ApplyThemeToGameDBStatusWindow()
+    EndIf
+EndProcedure
+
+Procedure CloseGameDBStatusWindow()
+    If IsWindow(#Window_GameDBStatus)
+        CloseWindow(#Window_GameDBStatus)
+    EndIf
+EndProcedure
+
+Procedure.q GetRemoteContentLength(url.s)
+Protected powerShellExe.s
+Protected params.s
+Protected psCommand.s
+Protected program.i
+Protected output.s
+
+powerShellExe = ResolvePowerShellPath()
+psCommand = "$ProgressPreference='SilentlyContinue';$r=Invoke-WebRequest -Method Head -Uri '" + EscapePowerShellSingleQuoted(url) + "';if($r.Headers['Content-Length']){Write-Output $r.Headers['Content-Length']}"
+params = "-NoProfile -ExecutionPolicy Bypass -Command " + Chr(34) + psCommand + Chr(34)
+
+program = RunProgram(powerShellExe, params, "", #PB_Program_Open | #PB_Program_Read | #PB_Program_Hide | #PB_Program_Wait)
+If program = 0
+    ProcedureReturn 0
+EndIf
+
+While AvailableProgramOutput(program)
+    output + ReadProgramString(program)
+Wend
+
+CloseProgram(program)
+output = Trim(output)
+If output = ""
+    ProcedureReturn 0
+EndIf
+
+ProcedureReturn Val(output)
+EndProcedure
+
+Procedure.i DownloadFileWithProgress(url.s, targetFile.s, progressGadget.i, sizeGadget.i, labelGadget.i, displayName.s)
+Protected totalBytes.q
+Protected currentBytes.q
+Protected percent.i
+Protected powerShellExe.s
+Protected params.s
+Protected psCommand.s
+Protected program.i
+
+powerShellExe = ResolvePowerShellPath()
+totalBytes = GetRemoteContentLength(url)
+SetGadgetText(labelGadget, displayName + ": downloading")
+If totalBytes > 0
+    SetGadgetText(sizeGadget, "0 B / " + FormatByteCount(totalBytes))
+Else
+    SetGadgetText(sizeGadget, "0 B / unknown size")
+EndIf
+SetGadgetState(progressGadget, 0)
+If progressGadget = #Gadget_GameDBStatus_SQLProgress
+    SetGadgetText(#Gadget_GameDBStatus_SQLPercent, "0%")
+ElseIf progressGadget = #Gadget_GameDBStatus_JSONProgress
+    SetGadgetText(#Gadget_GameDBStatus_JSONPercent, "0%")
+EndIf
+
+psCommand = "$ProgressPreference='SilentlyContinue';Invoke-WebRequest -Uri '" + EscapePowerShellSingleQuoted(url) + "' -OutFile '" + EscapePowerShellSingleQuoted(targetFile) + "'"
+params = "-NoProfile -ExecutionPolicy Bypass -Command " + Chr(34) + psCommand + Chr(34)
+program = RunProgram(powerShellExe, params, GetPathPart(targetFile), #PB_Program_Hide)
+If program = 0
+    MessageRequester("Update GameDB", "Could not launch PowerShell to download " + displayName + ".")
+    ProcedureReturn #False
+EndIf
+
+Repeat
+    PumpGameDBStatusWindowEvents()
+    If gGameDBStatusCancelled
+        KillProgram(program)
+        CloseProgram(program)
+        If FileSize(targetFile) <> -1
+            DeleteFile(targetFile)
+        EndIf
+        MessageRequester("Update GameDB", "GameDB update cancelled.")
+        ProcedureReturn #False
+    EndIf
+
+    currentBytes = FileSize(targetFile)
+    If currentBytes < 0
+        currentBytes = 0
+    EndIf
+
+    If totalBytes > 0
+        percent = Int((currentBytes * 100) / totalBytes)
+        If percent > 100
+            percent = 100
+        EndIf
+        SetGadgetState(progressGadget, percent)
+        SetGadgetText(sizeGadget, FormatByteCount(currentBytes) + " / " + FormatByteCount(totalBytes))
+        If progressGadget = #Gadget_GameDBStatus_SQLProgress
+            SetGadgetText(#Gadget_GameDBStatus_SQLPercent, Str(percent) + "%")
+        ElseIf progressGadget = #Gadget_GameDBStatus_JSONProgress
+            SetGadgetText(#Gadget_GameDBStatus_JSONPercent, Str(percent) + "%")
+        EndIf
+    Else
+        SetGadgetText(sizeGadget, FormatByteCount(currentBytes) + " / unknown size")
+    EndIf
+
+    If ProgramRunning(program) = 0
+        Break
+    EndIf
+
+    Delay(120)
+ForEver
+
+    currentBytes = FileSize(targetFile)
+    If currentBytes < 0
+        currentBytes = 0
+    EndIf
+    If totalBytes > 0
+        SetGadgetState(progressGadget, 100)
+        SetGadgetText(sizeGadget, FormatByteCount(currentBytes) + " / " + FormatByteCount(totalBytes))
+    Else
+        SetGadgetState(progressGadget, 100)
+        SetGadgetText(sizeGadget, FormatByteCount(currentBytes) + " / completed")
+    EndIf
+    If progressGadget = #Gadget_GameDBStatus_SQLProgress
+        SetGadgetText(#Gadget_GameDBStatus_SQLPercent, "100%")
+    ElseIf progressGadget = #Gadget_GameDBStatus_JSONProgress
+        SetGadgetText(#Gadget_GameDBStatus_JSONPercent, "100%")
+    EndIf
+
+    If ProgramExitCode(program) <> 0
+        CloseProgram(program)
+        MessageRequester("Update GameDB", "PowerShell failed while downloading " + displayName + ".")
+        ProcedureReturn #False
+    EndIf
+
+    CloseProgram(program)
+    SetGadgetText(labelGadget, displayName + ": downloaded")
+    ProcedureReturn #True
+EndProcedure
+
+Procedure SetGameDBStatusProgress(progressGadget.i, percentGadget.i, sizeGadget.i, labelGadget.i, labelText.s, percent.i, detailText.s)
+    If percent < 0
+        percent = 0
+    EndIf
+    If percent > 100
+        percent = 100
+    EndIf
+
+    SetGadgetText(labelGadget, labelText)
+    SetGadgetState(progressGadget, percent)
+    SetGadgetText(percentGadget, Str(percent) + "%")
+    SetGadgetText(sizeGadget, detailText)
+    PumpGameDBStatusWindowEvents()
+EndProcedure
+
+Procedure.i CountSQLStatements(sqlFile.s)
+Protected file.i
+Protected line.s
+Protected trimmed.s
+Protected inBlockComment.i
+Protected statementCount.i
+
+file = ReadFile(#PB_Any, sqlFile)
+If file = 0
+    ProcedureReturn -1
+EndIf
+
+While Eof(file) = 0
+    line = ReadString(file)
+    trimmed = Trim(line)
+
+    If inBlockComment
+        If FindString(trimmed, "*/", 1) > 0
+            inBlockComment = #False
+        EndIf
+        Continue
+    EndIf
+
+    If Left(trimmed, 2) = "/*"
+        If FindString(trimmed, "*/", 1) = 0
+            inBlockComment = #True
+        EndIf
+        Continue
+    EndIf
+
+    If trimmed = "" Or Left(trimmed, 2) = "--"
+        Continue
+    EndIf
+
+    If Right(trimmed, 1) = ";"
+        statementCount + 1
+    EndIf
+Wend
+
+CloseFile(file)
+ProcedureReturn statementCount
+EndProcedure
+
+Procedure.i ImportSQLFileWithProgress(sqlFile.s)
+Protected statementCount.i
+Protected executedCount.i
+Protected file.i
+Protected line.s
+Protected trimmed.s
+Protected statement.s
+Protected inBlockComment.i
+Protected importDatabase.i
+Protected percent.i
+
+statementCount = CountSQLStatements(sqlFile)
+If statementCount <= 0
+    MessageRequester("Update GameDB", "Could not count SQL statements in the extracted SQL file.")
+    ProcedureReturn #False
+EndIf
+
+SetGadgetText(#Gadget_GameDBStatus_Message, "Importing SQL into bamsx.db...")
+SetGameDBStatusProgress(#Gadget_GameDBStatus_SQLProgress, #Gadget_GameDBStatus_SQLPercent, #Gadget_GameDBStatus_SQLSize, #Gadget_GameDBStatus_SQLLabel, "SQL archive: importing", 0, "0 / " + Str(statementCount) + " statements")
+
+importDatabase = OpenDatabase(#PB_Any, gDatabaseFile, "", "")
+If importDatabase = 0
+    MessageRequester("Update GameDB", "Could not open bamsx.db for incremental SQL import.")
+    ProcedureReturn #False
+EndIf
+
+    DatabaseUpdate(importDatabase, "DROP TABLE IF EXISTS msxdb_romdetails")
+    DatabaseUpdate(importDatabase, "DROP TABLE IF EXISTS msxdb_rominfo")
+    DatabaseUpdate(importDatabase, "DROP TABLE IF EXISTS msxdb_company")
+
+file = ReadFile(#PB_Any, sqlFile)
+If file = 0
+    CloseDatabase(importDatabase)
+    MessageRequester("Update GameDB", "Could not open the extracted SQL file for import.")
+    ProcedureReturn #False
+EndIf
+
+While Eof(file) = 0
+    PumpGameDBStatusWindowEvents()
+    If gGameDBStatusCancelled
+        CloseFile(file)
+        CloseDatabase(importDatabase)
+        MessageRequester("Update GameDB", "GameDB update cancelled.")
+        ProcedureReturn #False
+    EndIf
+
+    line = ReadString(file)
+    trimmed = Trim(line)
+
+    If inBlockComment
+        If FindString(trimmed, "*/", 1) > 0
+            inBlockComment = #False
+        EndIf
+        Continue
+    EndIf
+
+    If Left(trimmed, 2) = "/*"
+        If FindString(trimmed, "*/", 1) = 0
+            inBlockComment = #True
+        EndIf
+        Continue
+    EndIf
+
+    If trimmed = "" Or Left(trimmed, 2) = "--"
+        Continue
+    EndIf
+
+    statement + line + Chr(10)
+    If Right(trimmed, 1) = ";"
+        If DatabaseUpdate(importDatabase, statement) = 0
+            CloseFile(file)
+            CloseDatabase(importDatabase)
+            MessageRequester("Update GameDB", "SQL import failed at statement " + Str(executedCount + 1) + ".")
+            ProcedureReturn #False
+        EndIf
+
+        executedCount + 1
+        percent = Int((executedCount * 100) / statementCount)
+        If percent > 100
+            percent = 100
+        EndIf
+        SetGameDBStatusProgress(#Gadget_GameDBStatus_SQLProgress, #Gadget_GameDBStatus_SQLPercent, #Gadget_GameDBStatus_SQLSize, #Gadget_GameDBStatus_SQLLabel, "SQL archive: importing", percent, Str(executedCount) + " / " + Str(statementCount) + " statements")
+        statement = ""
+    EndIf
+Wend
+
+CloseFile(file)
+CloseDatabase(importDatabase)
+SetGameDBStatusProgress(#Gadget_GameDBStatus_SQLProgress, #Gadget_GameDBStatus_SQLPercent, #Gadget_GameDBStatus_SQLSize, #Gadget_GameDBStatus_SQLLabel, "SQL archive: imported", 100, Str(executedCount) + " / " + Str(statementCount) + " statements")
+ProcedureReturn #True
+EndProcedure
+
+Procedure UpdateGameDB()
+Protected dataDir.s
+Protected sqlZip.s
+Protected jsonZip.s
+Protected sqlFile.s
+Protected jsonFile.s
+Protected tarExe.s
+Protected params.s
+
+If EnsureDatabaseWithSQLiteExe() = #False
+    ProcedureReturn
+EndIf
+
+dataDir = GetPathPart(gDatabaseFile) + "data\\"
+If FileSize(dataDir) = -1
+    CreateDirectory(dataDir)
+EndIf
+
+sqlZip = dataDir + "sql-msxromdb.zip"
+jsonZip = dataDir + "json-msxromsdb.zip"
+sqlFile = dataDir + "sql-romdb.sql"
+jsonFile = dataDir + "msxromsdb.json"
+
+tarExe = ResolveTarExePath()
+
+If FileSize(sqlZip) <> -1
+    DeleteFile(sqlZip)
+EndIf
+If FileSize(jsonZip) <> -1
+    DeleteFile(jsonZip)
+EndIf
+If FileSize(sqlFile) <> -1
+    DeleteFile(sqlFile)
+EndIf
+If FileSize(jsonFile) <> -1
+    DeleteFile(jsonFile)
+EndIf
+
+OpenGameDBStatusWindow()
+SetGadgetText(#Gadget_GameDBStatus_Message, "Downloading SQL archive...")
+If DownloadFileWithProgress("https://romdb.vampier.net/Archive/sql-msxromdb.zip", sqlZip, #Gadget_GameDBStatus_SQLProgress, #Gadget_GameDBStatus_SQLSize, #Gadget_GameDBStatus_SQLLabel, "SQL archive") = #False
+    CloseGameDBStatusWindow()
+    ReopenFrontendDatabase()
+    ProcedureReturn
+EndIf
+
+SetGadgetText(#Gadget_GameDBStatus_Message, "Downloading JSON archive...")
+If DownloadFileWithProgress("https://romdb.vampier.net/Archive/json-msxromsdb.zip", jsonZip, #Gadget_GameDBStatus_JSONProgress, #Gadget_GameDBStatus_JSONSize, #Gadget_GameDBStatus_JSONLabel, "JSON archive") = #False
+    CloseGameDBStatusWindow()
+    ReopenFrontendDatabase()
+    ProcedureReturn
+EndIf
+
+SetGadgetText(#Gadget_GameDBStatus_Message, "Extracting archives...")
+SetGameDBStatusProgress(#Gadget_GameDBStatus_SQLProgress, #Gadget_GameDBStatus_SQLPercent, #Gadget_GameDBStatus_SQLSize, #Gadget_GameDBStatus_SQLLabel, "SQL archive: extracting", 0, "Preparing extraction")
+SetGameDBStatusProgress(#Gadget_GameDBStatus_JSONProgress, #Gadget_GameDBStatus_JSONPercent, #Gadget_GameDBStatus_JSONSize, #Gadget_GameDBStatus_JSONLabel, "JSON archive: extracting", 0, "Preparing extraction")
+If gGameDBStatusCancelled
+    CloseGameDBStatusWindow()
+    ReopenFrontendDatabase()
+    MessageRequester("Update GameDB", "GameDB update cancelled.")
+    ProcedureReturn
+EndIf
+
+SetGameDBStatusProgress(#Gadget_GameDBStatus_SQLProgress, #Gadget_GameDBStatus_SQLPercent, #Gadget_GameDBStatus_SQLSize, #Gadget_GameDBStatus_SQLLabel, "SQL archive: extracting", 50, "Extracting SQL archive")
+params = "-xf " + Chr(34) + sqlZip + Chr(34) + " -C " + Chr(34) + dataDir + Chr(34)
+If RunProgramChecked(tarExe, params, dataDir, "Update GameDB", "Could not launch tar.exe to extract the SQL archive.", "tar.exe failed while extracting the SQL archive.") = #False
+    CloseGameDBStatusWindow()
+    ReopenFrontendDatabase()
+    ProcedureReturn
+EndIf
+SetGameDBStatusProgress(#Gadget_GameDBStatus_SQLProgress, #Gadget_GameDBStatus_SQLPercent, #Gadget_GameDBStatus_SQLSize, #Gadget_GameDBStatus_SQLLabel, "SQL archive: extracted", 100, "SQL extracted")
+
+If gGameDBStatusCancelled
+    CloseGameDBStatusWindow()
+    ReopenFrontendDatabase()
+    MessageRequester("Update GameDB", "GameDB update cancelled.")
+    ProcedureReturn
+EndIf
+
+SetGameDBStatusProgress(#Gadget_GameDBStatus_JSONProgress, #Gadget_GameDBStatus_JSONPercent, #Gadget_GameDBStatus_JSONSize, #Gadget_GameDBStatus_JSONLabel, "JSON archive: extracting", 50, "Extracting JSON archive")
+params = "-xf " + Chr(34) + jsonZip + Chr(34) + " -C " + Chr(34) + dataDir + Chr(34)
+If RunProgramChecked(tarExe, params, dataDir, "Update GameDB", "Could not launch tar.exe to extract the JSON archive.", "tar.exe failed while extracting the JSON archive.") = #False
+    CloseGameDBStatusWindow()
+    ReopenFrontendDatabase()
+    ProcedureReturn
+EndIf
+SetGameDBStatusProgress(#Gadget_GameDBStatus_JSONProgress, #Gadget_GameDBStatus_JSONPercent, #Gadget_GameDBStatus_JSONSize, #Gadget_GameDBStatus_JSONLabel, "JSON archive: extracted", 100, "JSON extracted")
+
+If FileSize(sqlFile) = -1
+    CloseGameDBStatusWindow()
+    MessageRequester("Update GameDB", "The extracted SQL file was not found after extraction.")
+    ReopenFrontendDatabase()
+    ProcedureReturn
+EndIf
+
+If gDatabaseReady And gDatabase
+    CloseDatabase(gDatabase)
+    gDatabase = 0
+    gDatabaseReady = #False
+EndIf
+
+If gGameDBStatusCancelled
+    CloseGameDBStatusWindow()
+    ReopenFrontendDatabase()
+    MessageRequester("Update GameDB", "GameDB update cancelled.")
+    ProcedureReturn
+EndIf
+
+If ImportSQLFileWithProgress(sqlFile) = #False
+    CloseGameDBStatusWindow()
+    ReopenFrontendDatabase()
+    ProcedureReturn
+EndIf
+
+If FileSize(sqlZip) <> -1
+    DeleteFile(sqlZip)
+EndIf
+If FileSize(jsonZip) <> -1
+    DeleteFile(jsonZip)
+EndIf
+
+ReopenFrontendDatabase()
+SetGadgetText(#Gadget_GameDBStatus_Message, "GameDB update completed.")
+SetGadgetText(#Gadget_GameDBStatus_Cancel, "Close")
+PumpGameDBStatusWindowEvents()
+CloseGameDBStatusWindow()
+
+MessageRequester("Update GameDB", "GameDB updated successfully." + Chr(10) + Chr(10) + "Imported SQL into bamsx.db and extracted JSON data into: " + dataDir)
+EndProcedure
+
 ; Garante que o arquivo do banco exista antes da abertura via biblioteca SQLite.
 ; Se necessario, usa o sqlite3.exe para criar a estrutura minima inicial.
 Procedure EnsureDatabaseWithSQLiteExe()
@@ -3322,6 +3929,7 @@ EndProcedure
 If OpenWindow(#Window_Main, 0, 0, 900, 600, "bamsx - Frontend fMSX", #PB_Window_SystemMenu | #PB_Window_SizeGadget | #PB_Window_ScreenCentered)
 If CreateMenu(0, WindowID(#Window_Main))
     MenuTitle("File")
+    MenuItem(#Menu_File_UpdateGameDB, "Update GameDB")
     MenuItem(#Menu_File_Exit, "Exit")
 
     MenuTitle("Tools")
@@ -3375,6 +3983,9 @@ event = WaitWindowEvent()
 Select event
 Case #PB_Event_Menu
 Select EventMenu()
+Case #Menu_File_UpdateGameDB
+UpdateGameDB()
+
 Case #Menu_File_Exit
 appRunning = #False
 
