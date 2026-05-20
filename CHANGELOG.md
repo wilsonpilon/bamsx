@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.5 (build 0x6A0D0A96)
+- Setup mais largo e compacto
+- About com cópia por card
+- Nova janela Help > CLI em cards com filtro, busca e cópia
+- Melhorias visuais gerais no padrão de cards
+- Interface em Inglês
+
 ## v0.1.3 (build 665A1B80)
 - Primeira versão pública
 - Interface gráfica completa para fMSX

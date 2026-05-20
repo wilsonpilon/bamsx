@@ -1,61 +1,69 @@
 # bamsx: Frontend Toy para fMSX
 
-**Versão:** 0.1.3
-**Build:** 0x665A1B80 (Unix UTC)
+**Versão:** 0.1.5  
+**Build:** 0x6A0D0A96 (Unix UTC seconds in hexadecimal)
 
-**Autor:** Wilson 'Barney' Pilon
-**(c)1972 Cybernostra, Inc.**
+**Autor:** Wilson 'Barney' Pilon  
+**(c)1972 Cybernostra, Inc.**  
 **2026 WIB Projetos**
 
-Este projeto é um frontend simples para o emulador fMSX, desenvolvido em PureBasic como um experimento para avaliar a viabilidade da linguagem em aplicações GUI modernas no Windows. O projeto não tem fins comerciais e serve apenas como estudo/toy project.
+Este projeto é um frontend para o emulador fMSX, desenvolvido em PureBasic como experimento de GUI no Windows. Não possui fins comerciais e é mantido como projeto didático/toy.
 
 ## Ferramentas Utilizadas
-- **VS Code Insiders** (edição e integração)
-- **Windows 11** (ambiente de desenvolvimento e execução)
-- **PureBasic 6.3** (linguagem e compilador principal)
-- **Copilot** (auxílio de IA para automação e geração de código)
-- **GitHub** (controle de versão e colaboração)
+- VS Code Insiders
+- Windows 11
+- PureBasic 6.40
+- SQLite 3
+- GitHub Copilot
 
 ## Sobre o Projeto
-- Frontend gráfico para o emulador fMSX
-- Interface amigável para configuração e execução do fMSX
-- Persistência de configurações via SQLite
-- Suporte a múltiplas opções de linha de comando do fMSX
-- Projeto didático/toy, sem pretensão de uso profissional
+- Frontend gráfico para execução e configuração do fMSX
+- Persistência de configurações em SQLite
+- Montagem automática da linha de comando
+- Interface com temas e janelas auxiliares de ajuda
+
+## Novidades Recentes (v0.1.5)
+- Setup redesenhado para layout mais largo e compacto, com mais opções lado a lado
+- About com cards clicáveis para copiar valores individuais (ex.: Build)
+- Help > CLI implementado em cards, com busca, filtros por categoria e cópia para clipboard
+- Keys e About padronizados no mesmo estilo visual de cards
+- Tradução da interface para Inglês
 
 ## Requisitos
-- **fMSX**: Baixe o executável em: https://fms.komkon.org/fMSX/
-- **SQLite3 DLL**: Baixe a DLL em: https://www.sqlite.org/download.html (coloque `sqlite3.dll` na mesma pasta do executável)
-- **Opcional**: Baixe o frontend (este projeto) via GitHub
+- fMSX: https://fms.komkon.org/fMSX/
+- sqlite3.exe na pasta do projeto (usado para bootstrap do banco)
+- SQLite runtime disponível para o PureBasic (`UseSQLiteDatabase()`)
 
 ## Compilação
-1. Instale o PureBasic 6.3 (https://www.purebasic.com/)
-2. Abra o arquivo `main.pb` no PureBasic ou edite no VS Code
-3. Certifique-se de que `sqlite3.dll` está no mesmo diretório do executável
-4. Compile usando o PureBasic (F5 ou menu Compiler > Compile/Run)
+1. Instale o PureBasic 6.40 (https://www.purebasic.com/)
+2. Abra `main.pb`
+3. Compile no IDE (F5) ou via terminal:
+	- `pbcompiler.exe .\main.pb`
 
 ## Operação
 1. Execute o frontend compilado
-2. No menu **Tools > Setup**, configure o caminho do `fmsx.exe` e demais opções desejadas
-3. Use os botões Browse/Create para selecionar ou criar arquivos de imagem, logs, etc.
-4. Clique em **Run** para iniciar o fMSX com as opções selecionadas
-5. Use o menu **Help** para acessar informações de CLI, teclas e sobre o projeto
+2. Abra **Tools > Setup** e configure o caminho do `fmsx.exe`
+3. Ajuste opções de máquina, vídeo, periféricos e arquivos
+4. Clique em **Run fMSX** para iniciar com os parâmetros selecionados
+5. Use **Help > CLI / Keys / About** para referência rápida
 
 ## Observações
-- O frontend não distribui o fMSX nem a DLL do SQLite, apenas facilita o uso
-- O projeto é experimental e pode conter bugs ou limitações
-- Sinta-se livre para modificar, estudar ou adaptar para outros experimentos
+- O frontend não distribui o executável do fMSX
+- O projeto é experimental e pode receber mudanças frequentes
+- Sinta-se livre para estudar e adaptar
 
 ---
 
 ## Changelog
 
+### v0.1.5 (build 0x6A0D0A96)
+- Setup mais largo e compacto
+- About com cópia por card
+- Nova janela Help > CLI em cards com filtro, busca e cópia
+- Melhorias visuais gerais no padrão de cards
+- Interface em Inglês
+
 ### v0.1.3 (build 0x665A1B80)
 - Primeira versão pública
-- Interface gráfica completa para fMSX
-- Suporte a múltiplas opções de linha de comando
-- Persistência de configurações via SQLite
-- UI com navegação, criação de arquivos e múltiplos discos
-- Menu Help com CLI, Keys e About
 
 **Autor:** Projeto experimental com auxílio do GitHub Copilot
